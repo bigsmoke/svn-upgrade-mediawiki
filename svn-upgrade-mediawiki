@@ -1,0 +1,49 @@
+#!/bin/bash
+#
+# Copyright 2009-2010 by Rowan Rodrik van der Molen
+# Released under the General Public Licence version 3
+
+svn_repo_url=`svn info|grep 'Repository Root:'|sed -e 's/Repository Root: //'`/vendor/mediawiki/
+
+merge=1
+while [ $# -gt 2 ] # Process extra options
+do
+    case "$1" in
+        --no-merge)
+            merge=0
+            ;;
+    esac
+    shift
+done
+
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 [--no-merge] version version"
+    exit 1
+fi
+
+last_version=$1
+new_version=$2
+
+tmp_dir=`mktemp -d`
+cd $tmp_dir
+
+for version in $*; do
+    echo "Downloading and extracting MediaWiki version $version..."
+
+    if [ -z `svn ls $svn_repo_url|grep $version` ]; then
+        branch=`echo $version |sed -e 's/\.[0-9]\+$//'`
+        download_file="mediawiki-$version.tar.gz"
+        download_url="http://download.wikimedia.org/mediawiki/$branch/$download_file"
+
+        wget $download_url || { echo "Downloading $download_file failed">&2; exit 1; }
+        tar --extract --ungzip --transform 's/^mediawiki-//' --file $download_file
+        svn_load_dirs.pl $svn_repo_url -t $version current $version
+    fi
+done
+
+cd -
+if [ $merge -eq 1 ]; then
+    svn merge "$svn_repo_url$last_version" "$svn_repo_url$new_version" .
+fi
+
+exit 0
