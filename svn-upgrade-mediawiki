@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2009-2010 by Rowan Rodrik van der Molen
+# Copyright 2009-2011 by Rowan Rodrik van der Molen
 # Released under the General Public Licence version 3
 
 svn_repo_url=`svn info|grep 'Repository Root:'|sed -e 's/Repository Root: //'`/vendor/mediawiki/
@@ -20,6 +20,9 @@ if [ $# -ne 2 ]; then
     echo "Usage: $0 [--no-merge] version version"
     exit 1
 fi
+
+# Clumsily assume that if listing the vendor URL in the repo fails, we still need to create it
+svn ls $svn_repo_url >/dev/null 2>&1 || svn mkdir --parents -m "Created dir for mediawiki vendor branch."
 
 last_version=$1
 new_version=$2
