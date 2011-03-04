@@ -3,35 +3,56 @@
 # Copyright 2009-2011 by Rowan Rodrik van der Molen
 # Released under the General Public Licence version 3
 
-svn_repo_url=`svn info|grep 'Repository Root:'|sed -e 's/Repository Root: //'`/vendor/mediawiki/
 
-merge=1
-while [ $# -gt 2 ] # Process extra options
-do
-    case "$1" in
-        --no-merge)
-            merge=0
-            ;;
-    esac
-    shift
-done
+usage() {
+    cat <<EOF
+Usage: $0 --upgrade [--no-merge] <old_version> <new_version>
+       $0 --initialize <version>
+       $0 --help
 
-if [ $# -ne 2 ]; then
-    echo "Usage: $0 [--no-merge] version version"
-    exit 1
-fi
+Use SVN vendor branches to cleanly upgrade a MediaWiki installation.
 
-# Clumsily assume that if listing the vendor URL in the repo fails, we still need to create it
-svn ls $svn_repo_url >/dev/null 2>&1 || svn mkdir --parents -m "Created dir for mediawiki vendor branch."
+OPTIONS
+        --help                         Show this help
+        --upgrade                      Upgrade from <old_version> to <new_version>
+        --no-merge                     Don't actually do the merge in the working copy
+        --initialize                   Install the first version
+EOF
+}
 
-last_version=$1
-new_version=$2
+usage_error() {
+    if [ "$1" ]; then echo -e "\e[1;31m$1\e[0m" >&2; fi
+    usage >&2
+    exit 2
+}
 
-tmp_dir=`mktemp -d`
-cd $tmp_dir
+initialize() {
+    [ $# -eq 1 ] || usage_error "Wrong number of arguments"
 
-for version in $*; do
+    # Clumsily assume that if listing the vendor URL in the repo fails, we still need to create it
+    svn mkdir --parents -m "Created dir for mediawiki vendor branch." $svn_repo_url
+
+    load_version $1
+}
+
+
+upgrade() {
+    [ $# -eq 2 ] || usage_error "Wrong number of arguments"
+
+    load_version $1 $2
+
+    if [ $merge -eq 1 ]; then
+        svn merge "$svn_repo_url$last_version" "$svn_repo_url$new_version" .
+    fi
+}
+
+load_version() {
+    version=$1
+
     echo "Downloading and extracting MediaWiki version $version..."
+
+    tmp_dir=`mktemp -d`
+    cd $tmp_dir
 
     if [ -z `svn ls $svn_repo_url|grep $version` ]; then
         branch=`echo $version |sed -e 's/\.[0-9]\+$//'`
@@ -42,11 +63,44 @@ for version in $*; do
         tar --extract --ungzip --transform 's/^mediawiki-//' --file $download_file
         svn_load_dirs.pl $svn_repo_url -t $version current $version
     fi
+
+    cd -
+}
+
+svn_repo_url=`svn info|grep 'Repository Root:'|sed -e 's/Repository Root: //'`/vendor/mediawiki/
+
+action=''
+merge=1
+while [ $# -gt 0 ] # Process extra options
+do
+    case "$1" in
+        --help)
+            usage
+            exit 0
+            ;;
+        --no-merge)
+            merge=0
+            ;;
+        --initialize)
+            action=initialize
+            ;;
+        --upgrade)
+            action=upgrade
+            ;;
+        -*)
+            usage_error "Unknown option ‘$1’"
+            ;;
+        *)
+            break
+            ;;
+    esac
+    shift
 done
 
-cd -
-if [ $merge -eq 1 ]; then
-    svn merge "$svn_repo_url$last_version" "$svn_repo_url$new_version" .
-fi
+
+[ -n "$action" ] || usage_error "Action unspecified."
+
+$action $*
 
 exit 0
+
